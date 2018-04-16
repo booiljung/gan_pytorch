@@ -1,3 +1,7 @@
+#
+# https://github.com/prcastro/pytorch-gan/blob/master/MNIST%20GAN.ipynb
+#
+
 def run_from_ipython():
     try:
         __IPYTHON__
@@ -8,15 +12,15 @@ def run_from_ipython():
       
 use_ipython = run_from_ipython()
       
-  
 if use_ipython:
     from   IPython import display
-
   
 import itertools
 import math
 import matplotlib.pyplot as plt
 import numpy as np
+import os
+import shutil
 import time
 import torch
 from   torch.autograd import Variable
@@ -27,8 +31,15 @@ from   torchvision import datasets, transforms
 
 
 if use_ipython:
-    !rm -rf results
-    !mkdir results
+    plt.ioff
+else:
+    plt.ion()
+
+
+if os.path.isdir("results"):
+    shutil.rmtree('results')
+if not os.path.isdir("results"):
+    os.mkdir("results")
 
 
 use_cuda = True if torch.cuda.is_available() else False
@@ -38,31 +49,51 @@ if use_cuda:
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 
+# Normalize Images
 transform=transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
 ])
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
-
 train_dataset = datasets.MNIST('../data', train=True, download=True, transform=transform)
-train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=100, shuffle=True, **kwargs)
+
+batch_size = 100
+train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, **kwargs)
    
+
+image_size = 28*28
+
+
+def MakeLayer(x_size, y_size):
+    return (
+        nn.Linear(x_size, y_size),
+#       nn.LeakyReLU(0.2, inplace=True),
+        nn.ReLU(),
+        nn.Dropout(0.3)         
+    )
+
 
 class Discriminator(nn.Module):
   
-    def __init__(self):
+    def __init__(self, image_size):
         super().__init__()
         self.model = nn.Sequential(
-            nn.Linear(784, 1024),
-            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(image_size, 1024),
+#            nn.LeakyReLU(0.2, inplace=True),
+            nn.ReLU(),
             nn.Dropout(0.3),
+
             nn.Linear(1024, 512),
-            nn.LeakyReLU(0.2, inplace=True),
+#            nn.LeakyReLU(0.2, inplace=True),
+            nn.ReLU(),
             nn.Dropout(0.3),
+
             nn.Linear(512, 256),
-            nn.LeakyReLU(0.2, inplace=True),
+#            nn.LeakyReLU(0.2, inplace=True),
+            nn.ReLU(),
             nn.Dropout(0.3),
+
             nn.Linear(256, 1),
             nn.Sigmoid()
         )
@@ -72,20 +103,25 @@ class Discriminator(nn.Module):
         out = out.view(out.size(0), -1)
         return out
 
-      
 
 class Generator(nn.Module):
   
-    def __init__(self):
+    def __init__(self, image_size):
         super().__init__()
         self.model = nn.Sequential(
             nn.Linear(100, 256),
-            nn.LeakyReLU(0.2, inplace=True),
+#            nn.LeakyReLU(0.2, inplace=True),
+            nn.ReLU(),
+
             nn.Linear(256, 512),
-            nn.LeakyReLU(0.2, inplace=True),
+#            nn.LeakyReLU(0.2, inplace=True),
+            nn.ReLU(),
+
             nn.Linear(512, 1024),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(1024, 784),
+#            nn.LeakyReLU(0.2, inplace=True),
+            nn.ReLU(),
+
+            nn.Linear(1024, image_size),
             nn.Tanh()
         )
     
@@ -96,19 +132,18 @@ class Generator(nn.Module):
         return out
 
 
-discriminator = Discriminator().cuda()
-generator = Generator().cuda()
+discriminator = Discriminator(image_size).cuda()
+generator = Generator(image_size).cuda()
 
 
 criterion = nn.BCELoss()
-#lr = 0.0002
-lr = 0.0002
-d_optimizer = torch.optim.Adam(discriminator.parameters(), lr=lr)
-g_optimizer = torch.optim.Adam(generator.parameters(), lr=lr)
+d_optimizer = torch.optim.Adam(discriminator.parameters(), lr=0.0002)
+g_optimizer = torch.optim.Adam(generator.parameters(), lr=0.0002)
 
 
 def train_discriminator(discriminator, images, real_labels, fake_images, fake_labels):
     discriminator.zero_grad()
+
     outputs = discriminator(images)
     real_loss = criterion(outputs, real_labels)
     real_score = outputs
@@ -132,7 +167,6 @@ def train_generator(generator, discriminator_outputs, real_labels):
 
 
 num_test_samples = 16
-test_noise = Variable(torch.randn(num_test_samples, 100).cuda())
 
 
 # create figure for plotting
@@ -142,8 +176,9 @@ for i, j in itertools.product(range(size_figure_grid), range(size_figure_grid)):
     ax[i,j].get_xaxis().set_visible(False)
     ax[i,j].get_yaxis().set_visible(False)
 
+
 # set number of epochs and initialize figure counter
-num_epochs = 300
+num_epochs = 500
 num_batches = len(train_loader)
 num_fig = 0
 
@@ -153,23 +188,24 @@ for epoch in range(num_epochs):
         images = Variable(images.cuda())
         real_labels = Variable(torch.ones(images.size(0)).cuda())
         
-        # Sample from generator
+        # fake images from generator
         noise = Variable(torch.randn(images.size(0), 100).cuda())
         fake_images = generator(noise)
         fake_labels = Variable(torch.zeros(images.size(0)).cuda())
         
-        # Train the discriminator
+        # train the discriminator with real images, fake images.
         d_loss, real_score, fake_score = train_discriminator(discriminator, images, real_labels, fake_images, fake_labels)
         
-        # Sample again from the generator and get output from discriminator
+        # face images to train generator
         noise = Variable(torch.randn(images.size(0), 100).cuda())
         fake_images = generator(noise)
         outputs = discriminator(fake_images)
 
-        # Train the generator
+        # train the generator
         g_loss = train_generator(generator, outputs, real_labels)
         
         if (n+1) % 200 == 0:
+            test_noise = Variable(torch.randn(num_test_samples, 100).cuda())
             test_images = generator(test_noise)
             
             for k in range(num_test_samples):
