@@ -1,7 +1,3 @@
-#
-# https://github.com/prcastro/pytorch-gan/blob/master/MNIST%20GAN.ipynb
-#
-
 def run_from_ipython():
     try:
         __IPYTHON__
@@ -65,13 +61,17 @@ train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
 image_size = 28*28
 
 
-def MakeLayer(x_size, y_size):
+def SingleLayer(in_feature, out_feature):
     return (
-        nn.Linear(x_size, y_size),
+        nn.Linear(in_feature, out_feature),
 #       nn.LeakyReLU(0.2, inplace=True),
         nn.ReLU(),
-        nn.Dropout(0.3)         
+        nn.Dropout(0.3),    
     )
+
+def add(list, *argv):
+    for arg in argv:
+        list.append(arg)
 
 
 class Discriminator(nn.Module):
@@ -79,21 +79,9 @@ class Discriminator(nn.Module):
     def __init__(self, image_size):
         super().__init__()
         self.model = nn.Sequential(
-            nn.Linear(image_size, 1024),
-#            nn.LeakyReLU(0.2, inplace=True),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-
-            nn.Linear(1024, 512),
-#            nn.LeakyReLU(0.2, inplace=True),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-
-            nn.Linear(512, 256),
-#            nn.LeakyReLU(0.2, inplace=True),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-
+            *SingleLayer(image_size, 1024),
+            *SingleLayer(1024, 512),
+            *SingleLayer(512, 256),
             nn.Linear(256, 1),
             nn.Sigmoid()
         )
@@ -109,18 +97,9 @@ class Generator(nn.Module):
     def __init__(self, image_size):
         super().__init__()
         self.model = nn.Sequential(
-            nn.Linear(100, 256),
-#            nn.LeakyReLU(0.2, inplace=True),
-            nn.ReLU(),
-
-            nn.Linear(256, 512),
-#            nn.LeakyReLU(0.2, inplace=True),
-            nn.ReLU(),
-
-            nn.Linear(512, 1024),
-#            nn.LeakyReLU(0.2, inplace=True),
-            nn.ReLU(),
-
+            *SingleLayer(100, 256),
+            *SingleLayer(256, 512),
+            *SingleLayer(512, 1024),
             nn.Linear(1024, image_size),
             nn.Tanh()
         )
